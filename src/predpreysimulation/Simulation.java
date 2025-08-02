@@ -8,7 +8,6 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Random;
 import java.util.Set;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
@@ -25,10 +24,10 @@ import predpreysimulation.PredManager.Pred;
 import predpreysimulation.PreyManager.Prey;
 
 /**
- *
+ * Manages encounters and displays the GUI, Readouts, and simulation area
  * @author Lachlan Harris
  */
-public class Simulation {
+public final class Simulation {
 
     private final StackPane display;
     private final Canvas canvas;
@@ -155,16 +154,16 @@ public class Simulation {
                     if (target.getAlive()) {
                         checkCount++;
                         if (target instanceof Prey prey) {
-                            if (hungry && Coord.inRange(pred.getPos(), prey.getPos(), pred.vars.encounterDistance())) {
+                            if (hungry && Coord.inRange(pred.getPos(), prey.getPos(), pred.traits.encounterDistance())) {
                                 predManager.encounter(pred, prey);
                                 hungry = pred.isHungry();
                             }
                         } else if (target instanceof Pred other
                                 && mature
                                 && pred.id != other.id
-                                && ((pred.vars.encounterDistance() == other.vars.encounterDistance() && pred.id > other.id)
-                                || pred.vars.encounterDistance() > other.vars.encounterDistance())
-                                && Coord.inRange(pred.getPos(), other.getPos(), pred.vars.encounterDistance())) {
+                                && ((pred.traits.encounterDistance() == other.traits.encounterDistance() && pred.id > other.id)
+                                || pred.traits.encounterDistance() > other.traits.encounterDistance())
+                                && Coord.inRange(pred.getPos(), other.getPos(), pred.traits.encounterDistance())) {
                             predManager.encounter(pred, other);
                         }
                     }

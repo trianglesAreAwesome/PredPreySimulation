@@ -8,7 +8,7 @@ import java.util.Random;
 import java.util.function.BiFunction;
 
 /**
- *
+ * Object for keeping track of an Animal's movement, relative to there center.
  * @author Lachlan Harris
  */
 public class MovePattern {
@@ -64,8 +64,8 @@ public class MovePattern {
         increment = speed;
     }
 
-    public Coord getLastPos() {
-        return lastPos;
+    public Vector getOffset() {
+        return new Vector(lastPos);
     }
 
     public Vector nextPos() {

@@ -43,4 +43,9 @@ public class Vector extends Coord {
         double radius = Math.sqrt(super.getX() * super.getX() + super.getY() * super.getY());
         return scale(toRadius/radius);
     }
+    
+    @Override
+    public Vector clone() {
+        return (Vector)super.clone();
+    }
 }

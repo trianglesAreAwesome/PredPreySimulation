@@ -11,7 +11,7 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 /**
- *
+ * This is the driver class for the Predator Prey evolution simulation
  * @author Lachlan Harris
  */
 public class PredPreySim extends Application{

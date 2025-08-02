@@ -4,8 +4,6 @@
  */
 package predpreysimulation;
 
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -23,10 +21,10 @@ import javafx.util.Duration;
 import predpreysimulation.PreyManager.Prey;
 
 /**
- *
+ * Manages the predators
  * @author Lachlan Harris
  */
-public class PredManager extends LinkedList<PredManager.Pred> {
+public final class PredManager extends LinkedList<PredManager.Pred> {
 
     private final double width;
     private final double height;
@@ -46,10 +44,11 @@ public class PredManager extends LinkedList<PredManager.Pred> {
     private static final double SPEED = 10;
     private static final double RANGE_BASE = 200;
     private static final double RANGE_SCALE = 700;
+    private final LinkedList<Male> males;
+    private final LinkedList<Female> females;
     private final HashSet<Pred> deadPreds = new HashSet<>();
-    private final HashSet<Pred> childPreds = new HashSet<>();
-    private final HashSet<Pred> parentPreds = new HashSet<>();
     private final int initialPop = 300;
+    private final double percentMales = 0.25;
     private final double preyCatchChance = 0.25;
     private final double maxEncounterDeathChance = 0.35;
     private final double maturityAge = 0.3;
@@ -57,7 +56,7 @@ public class PredManager extends LinkedList<PredManager.Pred> {
     public double avgFitness;
     public int predCount;
 
-    private final PredVars startVars = new PredVars(
+    private final PredTraits startTraits = new PredTraits(
             500, // range
             20, // moveInterval
             5000, // fedInterval
@@ -69,7 +68,7 @@ public class PredManager extends LinkedList<PredManager.Pred> {
             50 // encounterDistance
     );
 
-    public record PredVars(double range, double moveInterval, double fedInterval, double lifespan,
+    public record PredTraits(double range, double moveInterval, double fedInterval, double lifespan,
             double childDistMean, double childDistDev, double catchRange, double maxMatingChance, double encounterDistance) {
 
     }
@@ -80,18 +79,18 @@ public class PredManager extends LinkedList<PredManager.Pred> {
         this.timelines = timelines;
         Label popLabel = new Label("  Pred Pop: " + 0);
         Label genLabel = new Label("  Pred Avg Gen: " + 0);
-        ((FlowPane)main.getTop()).getChildren().add(popLabel);
-        ((FlowPane)main.getTop()).getChildren().add(genLabel);
+        ((FlowPane) main.getTop()).getChildren().add(popLabel);
+        ((FlowPane) main.getTop()).getChildren().add(genLabel);
         predCount = 0;
-
         Timeline timeline = new Timeline(new KeyFrame(BIRTH_CHECK_INTERVAL, event -> {
             checkPredBirths();
             popLabel.setText("Pred Pop: " + size());
             int totalGen = 0;
-            for (Pred pred : this) 
+            for (Pred pred : this) {
                 totalGen += pred.gen;
-            genLabel.setText("Pred Avg Gen: " + (double)totalGen / size());
-                }));
+            }
+            genLabel.setText("Pred Avg Gen: " + (double) totalGen / size());
+        }));
         timeline.setCycleCount(Animation.INDEFINITE);
         timeline.play();
         timelines.put("predBirthCheck", timeline);
@@ -100,17 +99,45 @@ public class PredManager extends LinkedList<PredManager.Pred> {
         timeline.setCycleCount(Animation.INDEFINITE);
         timeline.play();
         timelines.put("predDeathCheck", timeline);
-        
+
         timeline = new Timeline(new KeyFrame(RANGE_UPDATE_INTERVAL, event -> updateRanges()));
         timeline.setCycleCount(Animation.INDEFINITE);
         timeline.play();
         timelines.put("predRangeUpdate", timeline);
 
-        for (int i = initialPop; i > 0; i--) {
-            add(new Pred());
-        }
+        males = new LinkedList<>();
+        females = new LinkedList<>();
 
+        for (int i = initialPop; i > 0; i--) {
+            add(spawn());
+        }
         avgFitness = 1;
+    }
+
+    @Override
+    public boolean add(Pred p) {
+        switch (p) {
+            case Female female ->
+                females.add(female);
+            case Male male ->
+                males.add(male);
+            default ->
+                System.out.println("ERROR: Pred " + p.id + " is neither male nor female.");
+        }
+        return super.add(p);
+    }
+
+    @Override
+    public boolean remove(Object p) {
+        if (p instanceof Pred pred) {
+            pred.terminate();
+            deadPreds.add(pred);
+            ((pred.gender == 'f') ? females : males).remove(pred);
+            return super.remove(p);
+        } else {
+            System.out.println("attempted to remove " + p + " from PredManager");
+            return false;
+        }
     }
 
     public void updateAvgFitness() {
@@ -120,7 +147,7 @@ public class PredManager extends LinkedList<PredManager.Pred> {
         }
         avgFitness = totalFitness / this.size();
     }
-    
+
     private void updateRanges() {
         for (Pred pred : this) {
             pred.updateRange();
@@ -142,12 +169,10 @@ public class PredManager extends LinkedList<PredManager.Pred> {
     }
 
     private void checkPredBirths() {
-        childPreds.clear();
-        parentPreds.clear();
-        for (Pred pred : this) {
+        LinkedList<Pred> childPreds = new LinkedList<>();
+        for (Female pred : females) {
             if (pred.unbornChild) {
                 childPreds.add(pred.procreate());
-                parentPreds.add(pred);
             }
         }
         for (Pred child : childPreds) {
@@ -156,14 +181,10 @@ public class PredManager extends LinkedList<PredManager.Pred> {
     }
 
     public void displayPreds(GraphicsContext gc) {
-        displayGroup(gc, this, DISPLAY_COLOR);
-        displayGroup(gc, deadPreds, DEAD_COLOR);
-    }
-
-    private void displayGroup(GraphicsContext gc, Collection<Pred> predList, Color color) {
-        gc.setFill(color);
-        gc.beginPath();
-        for (Pred pred : predList) {
+        for (Pred pred : this) {
+            pred.display(gc);
+        }
+        for (Pred pred : deadPreds) {
             pred.display(gc);
         }
     }
@@ -179,8 +200,8 @@ public class PredManager extends LinkedList<PredManager.Pred> {
         if (pred1.isMature() && pred2.isMature()) {
             if (pred1.gender != pred2.gender) {
                 Pred male = pred1.gender == 'm' ? pred1 : pred2;
-                if (rand.nextDouble() < male.vars.maxMatingChance * male.getFitness() / avgFitness) {
-                    (pred1.gender == 'f' ? pred1 : pred2).addChild(male.id);
+                if (rand.nextDouble() < male.traits.maxMatingChance * male.getFitness() / avgFitness) {
+                    ((Female)(pred1.gender == 'f' ? pred1 : pred2)).addChild(male.id);
                 }
             } else {
                 double randNum = rand.nextDouble();
@@ -192,56 +213,60 @@ public class PredManager extends LinkedList<PredManager.Pred> {
                     pred2.kill("encounter");
                 } else {
                     Pred weakling = pred1.getFitness() < pred2.getFitness() ? pred1 : pred2;
-                    weakling.pos.move(new Vector(rand.nextGaussian(weakling.vars.childDistMean, weakling.vars.childDistDev))).constrain(width, height);
+                    weakling.jump(rand.nextGaussian(weakling.traits.childDistMean, weakling.traits.childDistDev));
                 }
             }
         }
     }
 
-    public class Pred implements Animal {
+    private Pred spawn() {
+        return (rand.nextDouble() < percentMales ? new Male() : new Female());
+    }
 
-        private final Coord pos;
-        private final MovePattern pattern;
-        private final int gen;
-        private boolean alive;
-        private boolean unbornChild;
-        public final PredVars vars;
+    public abstract class Pred implements Animal {
+
+        final Coord center;
+        final MovePattern pattern;
+        final int gen;
+        boolean alive;
+        final PredTraits traits;
         public final int id;
-        public final char gender;
+        final char gender;
+        Timeline lifespanTimeline;
+        Timeline starvationTimeline;
+        Timeline moveTimeline;
 
         public Pred() {
-            this(new Coord(rand.nextDouble() * (width - startVars.range) + startVars.range / 2, rand.nextDouble() * (height - startVars.range) + startVars.range / 2));
+            this(new Coord(rand.nextDouble() * (width - startTraits.range) + startTraits.range / 2, rand.nextDouble() * (height - startTraits.range) + startTraits.range / 2));
         }
 
         public Pred(Coord pos) {
-            this(pos, 0, startVars);
+            this(pos, 0, startTraits);
         }
 
-        public Pred(Coord pos, int gen, PredVars vars) {
-            this.pos = pos;
-            pos.constrain(width, height);
-            this.vars = vars;
-            this.pattern = new MovePattern(vars.range, SPEED);
+        public Pred(Coord center, int gen, PredTraits traits) {
+            this.center = center;
+            this.traits = traits;
+            this.pattern = new MovePattern(traits.range, SPEED);
             this.gen = gen;
             id = predCount++;
             alive = true;
-            unbornChild = false;
             gender = (rand.nextDouble() < 0.25) ? 'm' : 'f';
 
-            Timeline timeline = new Timeline(new KeyFrame(Duration.millis(vars.moveInterval), event -> move()));
-            timeline.setCycleCount(Animation.INDEFINITE);
-            timeline.play();
-            timelines.put("predMove" + id, timeline);
+            moveTimeline = new Timeline(new KeyFrame(Duration.millis(traits.moveInterval), event -> move()));
+            moveTimeline.setCycleCount(Animation.INDEFINITE);
+            moveTimeline.play();
+            timelines.put("predMove" + id, moveTimeline);
 
-            timeline = new Timeline(new KeyFrame(Duration.millis(vars.lifespan), event -> kill("lifespan")));
-            timeline.setCycleCount(1);
-            timeline.play();
-            timelines.put("predLifespan" + id, timeline);
+            lifespanTimeline = new Timeline(new KeyFrame(Duration.millis(traits.lifespan), event -> kill("lifespan")));
+            lifespanTimeline.setCycleCount(1);
+            lifespanTimeline.play();
+            timelines.put("predLifespan" + id, lifespanTimeline);
 
-            timeline = new Timeline(new KeyFrame(Duration.millis(vars.fedInterval), event -> kill("starved")));
-            timeline.setCycleCount(1);
-            timeline.play();
-            timelines.put("predStarvation" + id, timeline);
+            starvationTimeline = new Timeline(new KeyFrame(Duration.millis(traits.fedInterval), event -> kill("starved")));
+            starvationTimeline.setCycleCount(1);
+            starvationTimeline.play();
+            timelines.put("predStarvation" + id, starvationTimeline);
         }
 
         /**
@@ -251,19 +276,19 @@ public class PredManager extends LinkedList<PredManager.Pred> {
          */
         public double getAge() {
             try {
-                return timelines.get("predLifespan" + id).currentTimeProperty().get().divide(vars.lifespan).toMillis();
+                return lifespanTimeline.currentTimeProperty().get().divide(traits.lifespan).toMillis();
             } catch (NullPointerException e) {
                 return 1;
             }
         }
-        
+
         public boolean isHungry() {
             return getHunger() > hungerThreshold;
         }
 
         public double getHunger() {
             try {
-                return timelines.get("predStarvation" + id).currentTimeProperty().get().divide(vars.fedInterval).toMillis();
+                return starvationTimeline.currentTimeProperty().get().divide(traits.fedInterval).toMillis();
             } catch (NullPointerException e) {
                 return 1;
             }
@@ -286,53 +311,104 @@ public class PredManager extends LinkedList<PredManager.Pred> {
         public void kill() {
             kill("unspecified");
         }
-        
+
         public void kill(String reason) {
-//            System.out.println(reason);
             alive = false;
         }
 
         private void terminate() {
-            timelines.get("predMove" + id).stop();
-            timelines.get("predLifespan" + id).stop();
-            timelines.get("predStarvation" + id).stop();
+            moveTimeline.stop();
+            lifespanTimeline.stop();
+            starvationTimeline.stop();
             timelines.remove("predMove" + id);
             timelines.remove("predLifespan" + id);
             timelines.remove("predStarvation" + id);
+            moveTimeline = null;
+            lifespanTimeline = null;
+            starvationTimeline = null;
         }
-        
+
         public void updateRange() {
             pattern.setRange(RANGE_BASE + RANGE_SCALE * (1 - getHunger()));
         }
 
-        private void move() {
-            pos.move(pattern.nextPos()).constrain(width, height);
-        }
-
-        public void addChild(int parentId) {
-            unbornChild = true;
-//            System.out.println("Mother: " + id + ", Father: " + parentId);
-        }
-
-        private Pred procreate() {
-            if (unbornChild) {
-//                System.out.println("unborn: " + unbornChild);
-                unbornChild = false;
-                return new Pred(
-                        new Coord(pos).move(new Vector(rand.nextGaussian(vars.childDistMean, vars.childDistDev))),
-                        gen + 1,
-                        vars
-                );
-            }
-            return null;
-        }
+        public abstract void move();
 
         public void eat() {
-            if (alive) {
-                timelines.get("predStarvation" + id).playFromStart();
+            try {
+                if (alive) {
+                    starvationTimeline.playFromStart();
+                }
+            } catch (NullPointerException e) {
+                System.out.println("ERROR: pred with no starvationTimeline tried to eat");
             }
         }
-        
+
+        public abstract void display(GraphicsContext gc);
+
+        @Override
+        public double getX() {
+            return pattern.getOffset().getX();
+        }
+
+        @Override
+        public double getY() {
+            return pattern.getOffset().getY();
+        }
+
+        @Override
+        public Coord getPos() {
+            return pattern.getOffset();
+        }
+
+        /**
+         * Called on spawning and when neither pred dies in a same-gender
+         * encounter. Moves the pred's center the given distance, while not
+         * putting it in range of going offscreen.
+         *
+         * @param dist double - the distance the pred will move.
+         */
+        @Override
+        public void jump(double dist) {
+            Coord testCenter = center.clone();
+            double avgRange = RANGE_BASE + RANGE_SCALE / 2;
+            int counter = 0;
+            do {
+                testCenter.move(new Vector(dist));
+                if (counter++ > 100) {
+                    System.out.println("Over 100 testCenters for jump of Pred " + id + " with center " + center);
+                    return;
+                }
+            } while (testCenter.getX() < avgRange
+                    || testCenter.getX() > width - avgRange
+                    || testCenter.getY() < avgRange
+                    || testCenter.getY() > height - avgRange);
+            center.set(testCenter);
+        }
+
+    }
+
+    public class Female extends Pred {
+        boolean unbornChild = false;
+
+        public Female() {
+            super();
+        }
+
+        public Female(Coord center) {
+            super(center);
+        }
+
+        public Female(Coord center, int gen, PredTraits traits) {
+            super(center, gen, traits);
+            unbornChild = false;
+        }
+
+        public void addChild(int fatherId) {
+            unbornChild = true;
+        }
+
+        @Override
         public void display(GraphicsContext gc) {
             gc.beginPath();
             if (!alive) {
@@ -344,43 +420,73 @@ public class PredManager extends LinkedList<PredManager.Pred> {
             } else {
                 gc.setFill(DISPLAY_COLOR);
             }
-            double size;
-            switch (gender) {
-                case 'm':
-                    size = isMature() ? ADULT_SIZE : CHILD_SIZE;
-                    gc.fillRect(pos.getX(), pos.getY(), size, size);
-                    break;
-                case 'f':
-                    size = isMature() ? ADULT_DIAMOND_SIZE : CHILD_DIAMOND_SIZE;
-                    double x = pos.getX();
-                    double y = pos.getY();
-                    double halfSize = size / 2;
-                    gc.moveTo(x, y);
-                    gc.lineTo(x + halfSize, y - halfSize);
-                    gc.lineTo(x + size, y);
-                    gc.lineTo(x + halfSize, y + halfSize);
-                    gc.closePath();
-                    gc.fill();
-                    break;
-                default:
-                    System.out.println("ERROR gender of pred " + id + " is " + gender);
+            double size = isMature() ? ADULT_DIAMOND_SIZE : CHILD_DIAMOND_SIZE;
+            double x = center.getX() + pattern.getOffset().getX();
+            double y = center.getY() + pattern.getOffset().getY();
+            double halfSize = size / 2;
+            gc.moveTo(x, y);
+            gc.lineTo(x + halfSize, y - halfSize);
+            gc.lineTo(x + size, y);
+            gc.lineTo(x + halfSize, y + halfSize);
+            gc.closePath();
+            gc.fill();
+        }
+
+        public Pred procreate() {
+            Pred child = null;
+            if (unbornChild) {
+                unbornChild = false;
+                PredTraits traits = super.traits; // this is where evolution will be implemented
+                int gen = super.gen + 1;
+                Coord center = super.center;
+                if (rand.nextDouble() < percentMales) {
+                    child = new Male(center, gen, traits);
+                } else {
+                    child = new Female(center, gen, traits);
+                }
+                child.jump(rand.nextGaussian(traits.childDistMean, traits.childDistDev));
+                
             }
+            return child;
         }
 
         @Override
-        public double getX() {
-            return pos.getX();
-        }
-
-        @Override
-        public double getY() {
-            return pos.getY();
-        }
-
-        @Override
-        public Coord getPos() {
-            return new Coord(pos);
+        public void move() {
+            pattern.nextPos();
         }
     }
 
+    public class Male extends Pred {
+
+        public Male() {
+            super();
+        }
+
+        public Male(Coord center) {
+            super(center);
+        }
+
+        public Male(Coord center, int gen, PredTraits traits) {
+            super(center, gen, traits);
+        }
+
+        @Override
+        public void move() {
+            pattern.getOffset().move(pattern.nextPos()).constrain(width, height);
+        }
+
+        @Override
+        public void display(GraphicsContext gc) {
+            gc.beginPath();
+            if (!alive) {
+                gc.setFill(DEAD_COLOR);
+            } else if (getAge() < 0.05) {
+                gc.setFill(CHILD_COLOR);
+            } else {
+                gc.setFill(DISPLAY_COLOR);
+            }
+            double size = isMature() ? ADULT_SIZE : CHILD_SIZE;
+            gc.fillRect(center.getX() + pattern.getOffset().getX(), center.getY() + pattern.getOffset().getY(), size, size);
+        }
+    }
 }

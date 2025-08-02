@@ -5,11 +5,11 @@
 package predpreysimulation;
 
 /**
- *
+ * Interface for Pred and Prey to implement
  * @author Lachlan Harris
  */
 public interface Animal {
-    
+    public void jump(double dist);
     public void kill();
     public boolean getAlive();
     public double getX();
