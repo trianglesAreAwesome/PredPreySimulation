@@ -22,6 +22,7 @@ import predpreysimulation.PreyManager.Prey;
 
 /**
  * Manages the predators
+ *
  * @author Lachlan Harris
  */
 public final class PredManager extends LinkedList<PredManager.Pred> {
@@ -30,9 +31,9 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
     private final double height;
     private final HashMap<String, Timeline> timelines;
     private final Random rand = new Random();
-    private final Duration DEATH_CHECK_INTERVAL = Duration.millis(500);
-    private final Duration BIRTH_CHECK_INTERVAL = Duration.millis(100);
-    private final Duration RANGE_UPDATE_INTERVAL = Duration.millis(200);
+    private final Duration DEATH_CHECK_INTERVAL = Duration.millis(500); // Time between death checks for pred in millis.
+    private final Duration BIRTH_CHECK_INTERVAL = Duration.millis(100); // Time between birth checks for pred in millis.
+    private final Duration RANGE_UPDATE_INTERVAL = Duration.millis(200); // How often the range of a predator is updated based on time since last meal in millis.
     private static final Color DISPLAY_COLOR = Color.DARKSLATEGREY;
     private static final Color DEAD_COLOR = Color.RED;
     private static final Color PARENT_COLOR = Color.DARKBLUE;
@@ -42,17 +43,17 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
     private static final double CHILD_SIZE = 13;
     private static final double CHILD_DIAMOND_SIZE = Math.sqrt(2 * CHILD_SIZE * CHILD_SIZE);
     private static final double SPEED = 10;
-    private static final double RANGE_BASE = 200;
-    private static final double RANGE_SCALE = 700;
+    private static final double RANGE_BASE = 200; // Minimum range of patrol pattern.
+    private static final double RANGE_SCALE = 700; // RANGE_SCALE increases in proportion to time since last meal. RANGE_SCALE + RANGE_BASE = range of patrol pattern. 
     private final LinkedList<Male> males;
     private final LinkedList<Female> females;
     private final HashSet<Pred> deadPreds = new HashSet<>();
-    private final int initialPop = 300;
-    private final double percentMales = 0.25;
-    private final double preyCatchChance = 0.25;
-    private final double maxEncounterDeathChance = 0.35;
-    private final double maturityAge = 0.3;
-    private final double hungerThreshold = 0.2;
+    private static final int INITIAL_POP = 300; // Initial population size of predators.
+    private static final double PERCENT_MALES = 0.25; // Percent chance of a new predator being a male.
+    private static final double PREY_CATCH_CHANCE = 0.25; // Percent chance of a predator catching prey when they encounter.
+    private static final double MAX_ENCOUNTER_DEATH_CHANCE = 0.35; // The chance of death from a territorial encounter is this variable multiplied by inverse of fitness.
+    private static final double MATURITY_AGE = 0.3; // Percentage of lifespan at which rules apply for predator territorial encounters and predator procreation encounters.
+    private static final double HUNGER_THRESHOLD = 0.2; // The minimum percentage of fedInterval for which the predator can eat prey when encountered.
     public double avgFitness;
     public int predCount;
 
@@ -61,15 +62,24 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
             20, // moveInterval
             5000, // fedInterval
             100000, // lifespan
-            350, // childDistMean
-            100, // childDistDev
+            350, // jumpDistMean
+            100, // jumpDistDev
             50, // catchRange
             0.5, // maxMatingChance
-            50 // encounterDistance
+            50 // encounterDist
     );
 
-    public record PredTraits(double range, double moveInterval, double fedInterval, double lifespan,
-            double childDistMean, double childDistDev, double catchRange, double maxMatingChance, double encounterDistance) {
+    public record PredTraits(
+            double range, // Maximum distance from center a pred may reach while following their TERRITORY_PATTERN.
+            double moveInterval, // How often the pred moves, in millis.
+            double fedInterval, // How long the pred can go without eating a prey before starving.
+            double lifespan, // The max time a pred can live, in millis.
+            double jumpDistMean, // The mean distance a pred moves when jumping.
+            double jumpDistDev, // The standard deviation of the distance a pred moves when jumping.
+            double catchRange, // The pred must be this close to a prey before it can try to catch it.
+            double maxMatingChance, // Multiplied by male fitness out of avg fitness to get mating chance.
+            double encounterDist // Max dist between two preds for an encounter to trigger.
+            ) {
 
     }
 
@@ -108,7 +118,7 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
         males = new LinkedList<>();
         females = new LinkedList<>();
 
-        for (int i = initialPop; i > 0; i--) {
+        for (int i = INITIAL_POP; i > 0; i--) {
             add(spawn());
         }
         avgFitness = 1;
@@ -190,9 +200,9 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
     }
 
     public void encounter(Pred pred, Prey prey) {
-        if (rand.nextDouble() < preyCatchChance) {
+        if (rand.nextDouble() < PREY_CATCH_CHANCE) {
             pred.eat();
-            prey.kill();
+            prey.kill(PreyManager.Prey.DeathCause.EATEN);
         }
     }
 
@@ -201,26 +211,25 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
             if (pred1.gender != pred2.gender) {
                 Pred male = pred1.gender == 'm' ? pred1 : pred2;
                 if (rand.nextDouble() < male.traits.maxMatingChance * male.getFitness() / avgFitness) {
-                    ((Female)(pred1.gender == 'f' ? pred1 : pred2)).addChild(male.id);
+                    ((Female) (pred1.gender == 'f' ? pred1 : pred2)).addChild(male.id);
                 }
             } else {
                 double randNum = rand.nextDouble();
-                double firstDeathChance = pred1.getFitness() * maxEncounterDeathChance;
-                System.out.println(firstDeathChance);
+                double firstDeathChance = (1 - pred1.getFitness()) * MAX_ENCOUNTER_DEATH_CHANCE;
                 if (randNum < firstDeathChance) {
                     pred1.kill("encounter");
-                } else if (randNum < firstDeathChance + pred2.getFitness() * maxEncounterDeathChance) {
+                } else if (randNum < firstDeathChance + (1 - pred2.getFitness()) * MAX_ENCOUNTER_DEATH_CHANCE) {
                     pred2.kill("encounter");
                 } else {
                     Pred weakling = pred1.getFitness() < pred2.getFitness() ? pred1 : pred2;
-                    weakling.jump(rand.nextGaussian(weakling.traits.childDistMean, weakling.traits.childDistDev));
+                    weakling.jump(rand.nextGaussian(weakling.traits.jumpDistMean, weakling.traits.jumpDistDev));
                 }
             }
         }
     }
 
     private Pred spawn() {
-        return (rand.nextDouble() < percentMales ? new Male() : new Female());
+        return (rand.nextDouble() < PERCENT_MALES ? new Male() : new Female());
     }
 
     public abstract class Pred implements Animal {
@@ -251,7 +260,7 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
             this.gen = gen;
             id = predCount++;
             alive = true;
-            gender = (rand.nextDouble() < 0.25) ? 'm' : 'f';
+            gender = (this instanceof Male ? 'm' : 'f');
 
             moveTimeline = new Timeline(new KeyFrame(Duration.millis(traits.moveInterval), event -> move()));
             moveTimeline.setCycleCount(Animation.INDEFINITE);
@@ -283,7 +292,7 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
         }
 
         public boolean isHungry() {
-            return getHunger() > hungerThreshold;
+            return getHunger() > HUNGER_THRESHOLD;
         }
 
         public double getHunger() {
@@ -299,7 +308,7 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
         }
 
         public boolean isMature() {
-            return getAge() > maturityAge;
+            return getAge() > MATURITY_AGE;
         }
 
         @Override
@@ -358,7 +367,9 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
 
         @Override
         public Coord getPos() {
-            return pattern.getOffset();
+            Coord pos = center.clone().move(pattern.getOffset());
+            pos.constrain(width, height);
+            return pos;
         }
 
         /**
@@ -370,14 +381,13 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
          */
         @Override
         public void jump(double dist) {
-            Coord testCenter = center.clone();
-            double avgRange = RANGE_BASE + RANGE_SCALE / 2;
+            Coord testCenter;
+            double avgRange = (RANGE_BASE + RANGE_SCALE / 2) / 2;
             int counter = 0;
             do {
-                testCenter.move(new Vector(dist));
-                if (counter++ > 100) {
-                    System.out.println("Over 100 testCenters for jump of Pred " + id + " with center " + center);
-                    return;
+                testCenter = center.clone().move(new Vector(dist));
+                if (counter++ > 50) {
+                    testCenter.constrain(avgRange, avgRange, width - avgRange, height - avgRange);
                 }
             } while (testCenter.getX() < avgRange
                     || testCenter.getX() > width - avgRange
@@ -389,6 +399,7 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
     }
 
     public class Female extends Pred {
+
         boolean unbornChild = false;
 
         public Female() {
@@ -401,7 +412,6 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
 
         public Female(Coord center, int gen, PredTraits traits) {
             super(center, gen, traits);
-            unbornChild = false;
         }
 
         public void addChild(int fatherId) {
@@ -438,14 +448,14 @@ public final class PredManager extends LinkedList<PredManager.Pred> {
                 unbornChild = false;
                 PredTraits traits = super.traits; // this is where evolution will be implemented
                 int gen = super.gen + 1;
-                Coord center = super.center;
-                if (rand.nextDouble() < percentMales) {
+                Coord center = getPos();
+                if (rand.nextDouble() < PERCENT_MALES) {
                     child = new Male(center, gen, traits);
                 } else {
                     child = new Female(center, gen, traits);
                 }
-                child.jump(rand.nextGaussian(traits.childDistMean, traits.childDistDev));
-                
+                child.jump(rand.nextGaussian(traits.jumpDistMean, traits.jumpDistDev));
+
             }
             return child;
         }

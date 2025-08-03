@@ -30,25 +30,25 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
     private final HashMap<String, Timeline> timelines;
     private final PreyFood preyFood;
     private final Random rand;
-    private static final Duration EAT_INTERVAL = Duration.millis(20);
-    private static final Duration BIRTH_CHECK_INTERVAL = Duration.millis(250);
-    private static final Duration DEATH_CHECK_INTERVAL = Duration.millis(500);
+    private static final Duration EAT_INTERVAL = Duration.millis(20); // Time between prey eating in millis.
+    private static final Duration BIRTH_CHECK_INTERVAL = Duration.millis(250); // Time between birth checks for prey in millis.
+    private static final Duration DEATH_CHECK_INTERVAL = Duration.millis(500); // Time between death checks for prey in millis.
     private static final int DISPLAY_SIZE = 8;
     private static final Color DISPLAY_COLOR = Color.GRAY;
     private static final Color DEAD_COLOR = Color.RED;
     private static final Color PARENT_COLOR = Color.BLACK;
     private static final Color CHILD_COLOR = Color.WHITE;
     public static final double SPEED = 10; // The distance moved each moveInterval, DO NOT CHANGE
-    private final int initialPop = 1500; // Num of prey spawned at start of sim
-    public final double maxStarvationChance = 0.005; // Multiplied by the percent food missing in the prey's PreyFood tile to get the chance of starvation.
+    private final int INITIAL_POP = 1500; // Initial population size of prey.
+    public final double MAX_STARVATION_CHANCE = 0.005; // The chance of starvation is this variable multiplied by prey food missing.
     private final HashSet<Prey> deadPrey = new HashSet<>();
     private final HashSet<Prey> parentPrey = new HashSet<>();
     private final HashSet<Prey> childPrey = new HashSet<>();
     public int preyCount = 0;
 
     public final PreyTraits startTraits = new PreyTraits(
-            200, // childDistMean
-            200, // childDistDev
+            200, // jumpDistMean
+            200, // jumpDistDev
             10000, // lifespan
             15, // moveInterval
             300, // range
@@ -58,14 +58,14 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
     );
 
     public record PreyTraits(
-            double childDistMean,
-            double childDistDev,
-            double lifespan,
-            double moveInterval, // how often the prey moves
-            double range, // the diameter of the prey's "teritory"
-            double birthFoodThreshold, // minimum percentage of food in prey's PreyFood tile for a birth check to be made
-            double maxBirthChance, // max chance that the prey will have a litter
-            double litterSize // num offspring created when birth check passed
+            double jumpDistMean, // Mean distance a child moves away from their parent.
+            double jumpDistDev, // Standard deviation of distance the child moves away from their parent.
+            double lifespan, // Duration until prey death, if not eaten or starved, in millis.
+            double moveInterval, // How often the prey moves, in millis
+            double range, // The diameter of the prey's "teritory"
+            double birthFoodThreshold, // Minimum percentage of food in prey's PreyFood tile for a birth check to be made
+            double maxBirthChance, // Max chance that the prey will have a litter
+            double litterSize // Num offspring created when birth check passed
             ) {
 
     }
@@ -100,7 +100,7 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
                     for (Prey prey : this) {
                         totalGen += prey.gen;
                     }
-                    genLabel.setText("Pred Avg Gen: " + (double) totalGen / size());
+                    genLabel.setText("Prey Avg Gen: " + (double) totalGen / size());
                 }));
         timeline.setCycleCount(Animation.INDEFINITE);
         timeline.play();
@@ -116,7 +116,7 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
         timeline.play();
         timelines.put("preyDeathCheck", timeline);
 
-        for (int i = initialPop; i > 0; i--) {
+        for (int i = INITIAL_POP; i > 0; i--) {
             add(new Prey());
         }
     }
@@ -148,15 +148,25 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
 
     private void checkDeadPrey() {
         deadPrey.clear();
+        HashMap<Prey.DeathCause, Integer> causes = new HashMap<>();
+        for (Prey.DeathCause cause : Prey.DeathCause.values()) {
+            causes.put(cause, 0);
+        }
         for (Prey prey : this) {
             if (!prey.getAlive()) {
                 deadPrey.add(prey);
-                prey.terminate();
+                Prey.DeathCause cause = prey.terminate();
+                causes.put(cause, causes.get(cause) + 1);
             }
         }
         for (Prey prey : deadPrey) {
             remove(prey);
         }
+        System.out.print("Prey Death Causes: ");
+        for(Prey.DeathCause cause : Prey.DeathCause.values()) {
+            System.out.print(cause + ": " + causes.get(cause) + ", ");
+        }
+        System.out.println();
     }
 
     public void displayPrey(GraphicsContext gc) {
@@ -194,6 +204,7 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
         public final int id; // Each prey gets a unique identifier, used to access things specific to this prey.
         Timeline lifespanTimeline;
         Timeline moveTimeline;
+        DeathCause deathCause;
         
         /**
          * Constructor used to spawn gen 0 prey in a random spot.
@@ -241,7 +252,7 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
             // When this timeline ends, the prey dies of old age.
             lifespanTimeline = new Timeline(
                     new KeyFrame(Duration.millis(traits.lifespan), event -> {
-                        kill();
+                        kill(DeathCause.AGE);
                     })
             );
             lifespanTimeline.setCycleCount(1);
@@ -260,16 +271,17 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
          * @return Prey - new offspring of this prey
          */
         private Prey procreate() {
+            Prey child = null;
             if (unbornChildren > 0) {
                 unbornChildren--;
-                Prey child = new Prey(
-                        pattern.getOffset(),
+                child = new Prey(
+                        getPos(),
                         gen + 1,
                         traits
                 );
-                child.jump(rand.nextGaussian(traits.childDistMean, traits.childDistDev));
+                child.jump(rand.nextGaussian(traits.jumpDistMean, traits.jumpDistDev));
             }
-            return null;
+            return child;
         }
 
         public void setPattern(MovePattern pattern) {
@@ -283,10 +295,11 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
 
         @Override
         public void kill() {
-            kill("unspecified");
+            kill(DeathCause.NA);
         }
 
-        public void kill(String cause) {
+        public void kill(DeathCause cause) {
+            deathCause = cause;
             alive = false;
         }
 
@@ -295,13 +308,14 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
          * updates. Note: after termination, prey is still displayed for 1
          * preyDeathCheck cycle
          */
-        private void terminate() {
+        private DeathCause terminate() {
             moveTimeline.stop();
             lifespanTimeline.stop();
             timelines.remove("preyMove" + id);
             timelines.remove("preyLifespan" + id);
             moveTimeline = null;
             lifespanTimeline = null;
+            return deathCause;
         }
 
         /**
@@ -325,7 +339,9 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
 
         @Override
         public Coord getPos() {
-            return center.clone().move(pattern.getOffset());
+            Coord pos = center.clone().move(pattern.getOffset());
+            pos.constrain(width, height);
+            return pos;
         }
 
         /**
@@ -336,8 +352,8 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
          */
         public void eat() {
             double food = preyFood.eat(getPos());
-            if (rand.nextDouble() < food * maxStarvationChance) {
-                kill();
+            if (rand.nextDouble() < (1 - food) * MAX_STARVATION_CHANCE) {
+                kill(DeathCause.STARVED);
             } else if (food > traits.birthFoodThreshold && rand.nextDouble() < traits.maxBirthChance * food) {
                 addLitter();
             }
@@ -348,27 +364,31 @@ public final class PreyManager extends LinkedList<PreyManager.Prey> {
         }
 
         /**
-         * Called on spawning and when neither pred dies in a same-gender
-         * encounter. Moves the pred's center the given distance, while not
-         * putting it in range of going offscreen.
+         * Called on spawning of the prey.
+         * Moves the prey's center the given distance, 
+         * while not putting it in range of going offscreen.
          *
          * @param dist double - the distance the pred will move.
          */
         @Override
         public void jump(double dist) {
-            Coord testCenter = center.clone();
+            double halfRange = traits.range / 2;
+            Coord testCenter;
             int counter = 0;
             do {
-                testCenter.move(new Vector(dist));
-                if (counter++ > 100) {
-                    System.out.println("Over 100 testCenters for jump of Pred " + id + " with center " + center);
-                    return;
+                testCenter = center.clone().move(new Vector(dist));
+                if (counter++ > 50) {
+                    testCenter.constrain(halfRange, halfRange, width - halfRange, height - halfRange);
                 }
-            } while (testCenter.getX() < traits.range
-                    || testCenter.getX() > width - traits.range
-                    || testCenter.getY() < traits.range
-                    || testCenter.getY() > height - traits.range);
+            } while (testCenter.getX() < halfRange
+                    || testCenter.getX() > width - halfRange
+                    || testCenter.getY() < halfRange
+                    || testCenter.getY() > height - halfRange);
             center.set(testCenter);
+        }
+        
+        public enum DeathCause {
+            STARVED, EATEN, AGE, DEV, NA;
         }
     }
 }

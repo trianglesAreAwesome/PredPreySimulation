@@ -4,8 +4,6 @@
  */
 package predpreysimulation;
 
-import java.time.Instant;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
@@ -38,9 +36,9 @@ public final class Simulation {
     private final double width;
     private final double height;
     public final HashMap<String, Timeline> timelines = new HashMap<>();
-    public static final Duration DISPLAY_UPDATE_INTERVAL = Duration.millis(25);
-    public static final Duration ENCOUNTER_CHECK_INTERVAL = Duration.millis(200);
-    private static final double SECTOR_SIZE = 50;
+    public static final Duration DISPLAY_UPDATE_INTERVAL = Duration.millis(25); // Time between displays in millis.
+    public static final Duration ENCOUNTER_CHECK_INTERVAL = Duration.millis(200); // Time between encounter checks in millis.
+    private static final double SECTOR_SIZE = 50; // Size of sector divisions for encounter checks.
     private final HashSet<Animal>[][] sectors;
 
     public Simulation(BorderPane main, double width, double height, double scale) {
@@ -120,7 +118,6 @@ public final class Simulation {
     }
 
     public void checkEncounters() {
-        Date startTime = Date.from(Instant.now());
         updateSectors();
         predManager.updateAvgFitness();
         for (int row = 0; row < height / SECTOR_SIZE; row++) {
@@ -128,7 +125,6 @@ public final class Simulation {
                 checkSector(row, col);
             }
         }
-        System.out.println("Encounter check duration: " + startTime.toInstant().until(Instant.now()));
     }
 
     private void checkSector(int row, int col) {
@@ -154,16 +150,16 @@ public final class Simulation {
                     if (target.getAlive()) {
                         checkCount++;
                         if (target instanceof Prey prey) {
-                            if (hungry && Coord.inRange(pred.getPos(), prey.getPos(), pred.traits.encounterDistance())) {
+                            if (hungry && Coord.inRange(pred.getPos(), prey.getPos(), pred.traits.encounterDist())) {
                                 predManager.encounter(pred, prey);
                                 hungry = pred.isHungry();
                             }
                         } else if (target instanceof Pred other
                                 && mature
                                 && pred.id != other.id
-                                && ((pred.traits.encounterDistance() == other.traits.encounterDistance() && pred.id > other.id)
-                                || pred.traits.encounterDistance() > other.traits.encounterDistance())
-                                && Coord.inRange(pred.getPos(), other.getPos(), pred.traits.encounterDistance())) {
+                                && ((pred.traits.encounterDist() == other.traits.encounterDist() && pred.id > other.id)
+                                || pred.traits.encounterDist() > other.traits.encounterDist())
+                                && Coord.inRange(pred.getPos(), other.getPos(), pred.traits.encounterDist())) {
                             predManager.encounter(pred, other);
                         }
                     }

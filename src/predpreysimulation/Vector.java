@@ -10,7 +10,8 @@ import java.util.Random;
  *
  * @author Lachlan Harris
  */
-public class Vector extends Coord {
+public class Vector extends Coord implements Cloneable{
+    static Random rand = new Random();
     
     public Vector(double x, double y) {
         super(x, y);
@@ -30,8 +31,7 @@ public class Vector extends Coord {
      */
     public Vector(double dist) {
         super(0, 0);
-        Random r = new Random();
-        double angle = r.nextDouble() * Math.TAU; // in radians
+        double angle = rand.nextDouble() * Math.TAU; // in radians
         move(new Vector(dist * Math.cos(angle), dist * Math.sin(angle)));
     }
     

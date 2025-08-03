@@ -16,8 +16,10 @@ public class MovePattern {
     private static final Random rand = new Random();
     public static final double ANGLE_INCREMENT = 0.025;
     public static final double SAMPLE_ANGLE_INCREMENT = 0.001;
-    public static final BiFunction<Double, Double, Double> START_PATTERN = (theta, maxRadius) -> maxRadius * Math.cos(Math.PI * theta + theta / Math.PI);
-    public static final BiFunction<Double, Double, Double> SEARCH_PATTERN = (theta, maxRadius) -> theta * maxRadius / 4;
+    // Pattern used when moving within territory for predators and prey.
+    public static final BiFunction<Double, Double, Double> TERRITORY_PATTERN = (theta, maxRadius) -> maxRadius * Math.cos(Math.PI * theta + theta / Math.PI);
+    // Pattern used when a predator moves their territory in response to lack of procreation encounters or lack of prey encounters.
+    public static final BiFunction<Double, Double, Double> MIGRATION_PATTERN = (theta, maxRadius) -> theta * maxRadius / 4;
     private double angle;
     private double maxRadius;
     private final BiFunction<Double, Double, Double> pattern;
@@ -39,7 +41,7 @@ public class MovePattern {
     }
 
     public MovePattern(double diameter, double speed) {
-        this(diameter, speed, START_PATTERN);
+        this(diameter, speed, TERRITORY_PATTERN);
     }
 
     public MovePattern(double diameter, MovePattern prev) {

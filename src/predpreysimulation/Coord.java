@@ -5,10 +5,10 @@
 package predpreysimulation;
 
 /**
- * Object for keeping track of positions and doing coordinate based opperations
+ * Object for keeping track of positions and doing coordinate based operations
  * @author Lachlan Harris
  */
-public class Coord {
+public class Coord implements Cloneable{
 
     private double x;
     private double y;

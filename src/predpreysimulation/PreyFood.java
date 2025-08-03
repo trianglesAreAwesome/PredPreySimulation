@@ -22,12 +22,12 @@ import javafx.util.Duration;
  */
 public class PreyFood extends Group{
     public final ArrayList<FoodNode> foodNodes = new ArrayList<>();
-    public static final double SPACING = 25;
-    public static final Duration GROWTH_INTERVAL = Duration.millis(4000);
-    public static final Duration DISPLAY_INTERVAL = Duration.millis(200);
-    public static final double PREY_CONSUMPTION = 0.01;
-    public static final double[] GROWTH_AMOUNTS = {0.5, 0.2, 0.3, 0.1}; // spring, summer, fall, winter
-    public static final Duration SEASON_DUR = Duration.seconds(100);
+    public static final double SPACING = 25; // Size of preyfood tiles.
+    public static final Duration GROWTH_INTERVAL = Duration.millis(4000); // Time between growth of prey food tiles in millis.
+    public static final Duration DISPLAY_INTERVAL = Duration.millis(200); // Time between updating color of prey food tiles in millis.
+    public static final double PREY_CONSUMPTION = 0.01; // Amount of prey food that prey eat (in percentage decimal).
+    public static final double[] GROWTH_AMOUNTS = {0.5, 0.2, 0.3, 0.1}; // Array containing the amount of prey food grown back every growth interval for each season.
+    public static final Duration SEASON_DUR = Duration.seconds(100); // Time between switching of seasons in SECONDS.
     private double currentGrowthAmount;
     private final double height;
     private final double width;
